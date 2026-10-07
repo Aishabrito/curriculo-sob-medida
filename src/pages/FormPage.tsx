@@ -86,8 +86,10 @@ export default function FormPage() {
   return (
     <main className="page page-form">
       <header className="hero">
-        <p className="eyebrow">Currículo Sob Medida</p>
-        <h1>Seu currículo, ajustado para cada vaga — sem inventar nada.</h1>
+        <p className="eyebrow eyebrow-pill">Currículo Sob Medida</p>
+        <h1>
+          Seu currículo, ajustado para cada vaga — <span className="hl">sem inventar nada.</span>
+        </h1>
         <p className="lede">
           Cada mudança mostra de onde veio no seu currículo e qual requisito da vaga ela atende. Você aprova uma por uma e
           baixa o PDF.
@@ -98,8 +100,9 @@ export default function FormPage() {
       </header>
 
       <form className="card form" onSubmit={onSubmit} aria-busy={loading}>
-        <label className="field">
+        <label className="field field-vaga">
           <span className="field-label">
+            <span className="step" aria-hidden>1</span>
             Sobre a vaga <em className="required">obrigatório</em>
           </span>
           <span className="field-hint">Cole a descrição completa: atividades, requisitos, diferenciais.</span>
@@ -112,8 +115,9 @@ export default function FormPage() {
           />
         </label>
 
-        <label className="field">
+        <label className="field field-empresa">
           <span className="field-label">
+            <span className="step" aria-hidden>2</span>
             Sobre a empresa <em className="optional">opcional</em>
           </span>
           <span className="field-hint">Missão, valores, cultura, produto — do site, do LinkedIn ou da própria vaga.</span>
@@ -125,8 +129,9 @@ export default function FormPage() {
           />
         </label>
 
-        <div className="field">
+        <div className="field field-curriculo">
           <span className="field-label">
+            <span className="step" aria-hidden>3</span>
             Seu currículo <em className="required">obrigatório</em>
           </span>
           {pasteMode ? (
@@ -167,6 +172,9 @@ export default function FormPage() {
                 </>
               ) : (
                 <>
+                  <svg className="drop-icon" viewBox="0 0 24 24" aria-hidden>
+                    <path d="M12 16V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                   <strong>Anexe seu currículo</strong>
                   <span>Arraste aqui ou clique — PDF, DOCX ou TXT</span>
                 </>
@@ -183,8 +191,9 @@ export default function FormPage() {
           )}
         </div>
 
-        <label className="field">
+        <label className="field field-extra">
           <span className="field-label">
+            <span className="step" aria-hidden>4</span>
             O que não está no seu currículo <em className="optional">opcional</em>
           </span>
           <span className="field-hint">

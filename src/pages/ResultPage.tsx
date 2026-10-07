@@ -129,7 +129,7 @@ export default function ResultPage() {
       </nav>
 
       <header className="result-head">
-        <p className="eyebrow">Resultado</p>
+        <p className="eyebrow eyebrow-pill">Resultado</p>
         <h1>
           {result.jobTitle || "Sua vaga"}
           {result.companyName && <span className="muted"> · {result.companyName}</span>}
@@ -138,17 +138,17 @@ export default function ResultPage() {
       </header>
 
       <section className="scores" aria-label="Indicadores">
-        <div className="score">
+        <div className="score score-ats">
           <span className="score-label">Compatibilidade com o ATS</span>
           <Delta before={data.ats.before} after={data.ats.after} suffix="%" />
           <span className="score-hint">termos da vaga presentes no currículo</span>
         </div>
-        <div className="score">
+        <div className="score score-human">
           <span className="score-label">Soa humano</span>
           <Delta before={data.human.before} after={data.human.after} />
           <span className="score-hint">sem clichês nem frases de robô</span>
         </div>
-        <div className="score">
+        <div className="score score-accepted">
           <span className="score-label">Mudanças aceitas</span>
           <span className="delta"><strong>{accepted}</strong><span className="delta-before">de {total}</span></span>
           <span className="score-hint">{reviewed} revisadas</span>

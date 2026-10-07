@@ -1,65 +1,82 @@
+import { BULLET_RE, DEFAULT_PROFILE, scaleProfile, sizeScale, type StyleProfile, type TextStyle } from "./layout";
 import type { FinalResume } from "./resume";
 
-// PDF de uma coluna, só texto, fontes padrão: é o formato que os filtros ATS
-// leem melhor. Nada de tabelas, ícones ou colunas.
+// Gera o PDF final. Com o perfil padrão sai um PDF de uma coluna, só texto,
+// que os filtros ATS leem bem. Com o perfil lido do PDF original, repete as
+// fontes, tamanhos, negritos, cores, margens e marcadores do currículo da pessoa.
 
-const BULLET = /^[-•*▪●◦]\s*/;
+type Doc = InstanceType<(typeof import("jspdf"))["jsPDF"]>;
 
-export async function downloadResumePdf(resume: FinalResume, fileName: string): Promise<void> {
+export async function downloadResumePdf(resume: FinalResume, fileName: string, profile: StyleProfile = DEFAULT_PROFILE): Promise<void> {
   const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const margin = 56;
-  const width = doc.internal.pageSize.getWidth() - margin * 2;
-  const bottom = doc.internal.pageSize.getHeight() - margin;
-  let y = margin;
+  const doc: Doc = new jsPDF({ unit: "pt", format: [profile.pageWidth, profile.pageHeight] });
+  const measure = (text: string, st: TextStyle) => {
+    doc.setFont(st.family, st.bold ? "bold" : "normal");
+    return doc.getStringUnitWidth(text) * st.size;
+  };
+  const p = profile === DEFAULT_PROFILE ? profile : scaleProfile(profile, sizeScale(profile, measure));
+  const margin = p.marginX;
+  const width = p.pageWidth - margin * 2;
+  const bottom = p.pageHeight - Math.max(40, p.marginTop);
+  let y = p.marginTop;
 
   const ensure = (h: number) => {
     if (y + h > bottom) {
-      doc.addPage();
-      y = margin;
+      doc.addPage([p.pageWidth, p.pageHeight]);
+      y = p.marginTop;
     }
   };
 
-  const write = (text: string, size: number, style: "normal" | "bold", gap: number, indent = 0) => {
-    doc.setFont("helvetica", style);
-    doc.setFontSize(size);
+  const use = (st: TextStyle) => {
+    doc.setFont(st.family, st.bold && st.italic ? "bolditalic" : st.bold ? "bold" : st.italic ? "italic" : "normal");
+    doc.setFontSize(st.size);
+    doc.setTextColor(...st.color);
+  };
+
+  const write = (text: string, st: TextStyle, gapAfter: number, opts: { indent?: number; center?: boolean } = {}) => {
+    use(st);
+    const indent = opts.indent ?? 0;
     const lines = doc.splitTextToSize(text, width - indent) as string[];
-    const lh = size * 1.35;
+    const lh = st.size * p.lineHeight;
     for (const line of lines) {
       ensure(lh);
-      doc.text(line, margin + indent, y + size);
+      if (opts.center) doc.text(line, p.pageWidth / 2, y + st.size, { align: "center" });
+      else doc.text(line, margin + indent, y + st.size);
       y += lh;
     }
-    y += gap;
+    y += gapAfter;
   };
 
-  doc.setTextColor(20, 20, 20);
-  write(resume.name || "Currículo", 20, "bold", 2);
-  if (resume.headline) write(resume.headline, 11.5, "normal", 2);
-  if (resume.contact.length) {
-    doc.setTextColor(70, 70, 70);
-    write(resume.contact.join("  |  "), 9.5, "normal", 10);
-    doc.setTextColor(20, 20, 20);
-  }
+  const center = p.centeredHeader;
+  write(resume.name || "Currículo", p.name, 2, { center });
+  if (resume.headline) write(resume.headline, p.headline, 2, { center });
+  if (resume.contact.length) write(resume.contact.join("  |  "), p.contact, 10, { center });
 
   for (const section of resume.sections) {
-    ensure(40);
-    y += 6;
-    write(section.title.toUpperCase(), 10.5, "bold", 0);
-    doc.setDrawColor(180, 180, 180);
-    doc.line(margin, y + 1, margin + width, y + 1);
-    y += 8;
-    for (const line of section.lines) {
-      if (BULLET.test(line)) {
-        ensure(14);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.text("•", margin + 2, y + 10);
-        write(line.replace(BULLET, ""), 10, "normal", 3, 14);
-      } else {
-        write(line, 10, "normal", 3);
-      }
+    ensure(p.heading.size * 3 + p.body.size * 2);
+    y += p.body.size * 0.6;
+    write(profile === DEFAULT_PROFILE ? section.title.toUpperCase() : section.title, p.heading, p.headingRule ? 0 : 3);
+    if (p.headingRule) {
+      doc.setDrawColor(180, 180, 180);
+      doc.line(margin, y + 1, margin + width, y + 1);
+      y += 8;
     }
+    section.lines.forEach((raw, i) => {
+      const id = section.lineIds[i];
+      const hadBullet = id ? p.bulletedLines[id] : p.bulletedSections[section.id];
+      const explicit = raw.match(BULLET_RE);
+      const text = raw.replace(BULLET_RE, "");
+      const mark = explicit ? (p.bullet ?? "•") : hadBullet && p.bullet ? p.bullet : null;
+      if (mark) {
+        const indent = p.body.size * 1.4;
+        ensure(p.body.size * p.lineHeight);
+        use(p.body);
+        doc.text(mark === "·" ? "•" : mark, margin + 2, y + p.body.size);
+        write(text, p.body, 2, { indent });
+      } else {
+        write(text, p.body, 2);
+      }
+    });
   }
 
   doc.save(fileName);

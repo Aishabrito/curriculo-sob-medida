@@ -4,6 +4,8 @@ export interface AnalyzeInput {
   job: string;
   company?: string;
   resume: string;
+  /** Coisas que não estão no currículo e a pessoa quer acrescentar. */
+  extra?: string;
 }
 
 export interface ResumeLine {

@@ -16,6 +16,7 @@ interface Props {
 const EVIDENCE_LABEL: Record<EvidenceStatus, string> = {
   verificada: "Prova encontrada no seu currículo",
   aproximada: "Prova encontrada (com pequenas diferenças)",
+  "do-relato": "Veio do que você contou (não estava no currículo)",
   "sem-evidencia": "Não encontramos isso no seu currículo",
 };
 

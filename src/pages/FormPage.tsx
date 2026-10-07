@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { demoInput, demoResult } from "../demo/example";
-import { ACCEPTED_FILES, cleanText, extractText } from "../lib/extractText";
+import { ACCEPTED_FILES, cleanText, extractText, type SourceFile } from "../lib/extractText";
 import { requestAnalysis, saveSession } from "../lib/session";
 
 const LOADING_STEPS = [
@@ -17,6 +17,8 @@ export default function FormPage() {
   const [job, setJob] = useState("");
   const [company, setCompany] = useState("");
   const [resume, setResume] = useState("");
+  const [extra, setExtra] = useState("");
+  const [source, setSource] = useState<SourceFile | undefined>();
   const [fileName, setFileName] = useState("");
   const [pasteMode, setPasteMode] = useState(false);
   const [reading, setReading] = useState(false);
@@ -37,10 +39,13 @@ export default function FormPage() {
     setError("");
     setReading(true);
     try {
-      setResume(await extractText(file));
+      const out = await extractText(file);
+      setResume(out.text);
+      setSource(out.source);
       setFileName(file.name);
     } catch (err) {
       setResume("");
+      setSource(undefined);
       setFileName("");
       setError(err instanceof Error ? err.message : "Não consegui ler o arquivo.");
     } finally {
@@ -57,14 +62,14 @@ export default function FormPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    const input = { job: job.trim(), company: company.trim(), resume: cleanText(resume) };
+    const input = { job: job.trim(), company: company.trim(), resume: cleanText(resume), extra: extra.trim() };
     if (input.job.length < 80) return setError("Cole a descrição completa da vaga (requisitos, atividades…).");
     if (input.resume.length < 200) return setError("Anexe seu currículo ou cole o texto dele.");
     setLoading(true);
     setStep(0);
     try {
       const result = await requestAnalysis(input);
-      saveSession({ input, result, decisions: {} });
+      saveSession({ input, result, decisions: {}, source: pasteMode ? undefined : source });
       navigate("/resultado");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Algo deu errado. Tente de novo.");
@@ -171,7 +176,29 @@ export default function FormPage() {
           <button type="button" className="link-button small" onClick={() => setPasteMode((p) => !p)}>
             {pasteMode ? "Prefiro anexar um arquivo" : "Prefiro colar o texto"}
           </button>
+          {!pasteMode && (
+            <span className="field-hint">
+              Word (.docx) mantém a formatação idêntica. PDF sai no mesmo estilo (fontes, tamanhos, cores e marcadores).
+            </span>
+          )}
         </div>
+
+        <label className="field">
+          <span className="field-label">
+            O que não está no seu currículo <em className="optional">opcional</em>
+          </span>
+          <span className="field-hint">
+            Projetos, cursos, trabalhos, voluntariado, conquistas… Escreva do seu jeito: a IA encaixa no lugar certo e
+            mostra que veio daqui.
+          </span>
+          <textarea
+            value={extra}
+            onChange={(e) => setExtra(e.target.value)}
+            rows={4}
+            maxLength={4000}
+            placeholder="Ex.: Terminei o curso de TypeScript da Alura em setembro. Fiz um app de controle de gastos em React com gráficos…"
+          />
+        </label>
 
         <p className="privacy">
           🔒 O arquivo é lido no seu navegador; só o texto vai para a IA (Google Gemini, plano gratuito — que pode usar os

@@ -24,21 +24,23 @@ A maioria dos "otimizadores de currículo" devolve um texto novo, cheio de palav
 | **Detector de texto robótico** | Destaca clichês ("proativa", "apaixonada por", "sinergia"…) e dá uma nota de "soa humano", com dica do que colocar no lugar. |
 | **Plano para as lacunas** | O que a vaga pede e você ainda não mostra vira uma ação concreta e gratuita ("adicione testes com Vitest no projeto X — 2 noites"). A palavra-chave não é enfiada no currículo. |
 | **Ponte com a empresa** | Se você contar os valores da empresa, recebe uma frase verdadeira ligando a sua história a eles, uma mensagem para o recrutador e as perguntas prováveis da entrevista. |
-| **PDF que o ATS lê** | Uma coluna, só texto, fontes padrão. |
+| **O que não está no currículo** | Campo opcional para contar projetos, cursos e conquistas que ficaram de fora. A IA encaixa na seção certa e cada mudança mostra "veio do que você contou". |
+| **Mantém a sua formatação** | Word (.docx): o site edita o próprio arquivo, então fonte, cor, marcadores e espaçamento ficam idênticos e só o texto aprovado muda. PDF: o site lê o estilo do original (fontes, tamanhos, negrito, cores, margens, marcadores, alinhamento) e gera o novo PDF no mesmo estilo, ajustando o tamanho quando a fonte original não está disponível. |
+| **PDF que o ATS lê** | Texto selecionável, uma coluna. Também dá para baixar um PDF simples. |
 
 ## Como funciona por dentro
 
 ```
 navegador                                   função na Vercel (/api/analyze)
 ─────────                                   ──────────────────────────────
-PDF/DOCX → texto (pdf.js / mammoth)
+PDF/DOCX → texto (pdf.js / mammoth) + estilo do PDF ou o próprio .docx
 vaga + empresa + texto ───────────────────► valida tamanho e limite por IP
                                             Gemini (grátis) ─► se falhar ─► Groq (grátis)
                                             confere e limpa o JSON da IA
 ◄─────────────────────────────────── seções, sugestões, palavras-chave, lacunas…
 confere as provas no texto original
 calcula o ATS antes/depois e a nota "soa humano"
-você aprova → monta o currículo final → PDF (jsPDF)
+você aprova → Word: edita o .docx original (JSZip) · PDF: novo PDF no estilo do original (jsPDF)
 ```
 
 - **React + Vite + TypeScript**, sem biblioteca de UI.
@@ -75,7 +77,8 @@ api/analyze.ts          função serverless (Vercel)
 server/                 chamada às IAs, prompt, validação de entrada, limite por IP
 shared/                 tipos e validação da resposta da IA (usados nos dois lados)
 src/pages/              tela do formulário e tela de resultado
-src/lib/                provas, ATS, clichês, montagem do currículo, PDF, leitura de arquivos
+src/lib/                provas, ATS, clichês, montagem do currículo, leitura de arquivos,
+                        layout.ts (estilo do PDF), pdf.ts (gera o PDF), docx.ts (edita o Word)
 src/demo/example.ts     exemplo fictício usado no "Ver um exemplo pronto"
 ```
 

@@ -159,6 +159,8 @@ textarea:focus, button:focus-visible, .dropzone:focus-visible {
 .evidence { font-size: 0.85rem; margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--ok-bg); color: var(--ok); }
 .evidence q { display: block; font-style: italic; color: var(--ink); margin-top: 2px; }
 .evidence.ev-sem-evidencia { background: var(--warn-bg); color: var(--warn); }
+.evidence.ev-do-relato { background: var(--add-bg); color: var(--add); }
+.suggestion.ev-do-relato { border-left-color: var(--add); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 mark.cliche { background: var(--cliche-bg); color: inherit; border-radius: 3px; padding: 0 2px; }
 
@@ -190,6 +192,11 @@ mark.cliche { background: var(--cliche-bg); color: inherit; border-radius: 3px; 
 .paper-contact { margin: 2px 0 14px; color: #555; font-size: 0.75rem; }
 .paper h4 { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin: 14px 0 6px; }
 .paper p { margin: 0 0 4px; }
+
+.format-note { font-size: 0.82rem; color: var(--muted); margin: 0 0 12px; }
+.format-ok { font-size: 0.85rem; background: var(--ok-bg); color: var(--ok); padding: 8px 12px; border-radius: 10px; }
+.paper-styled h4 { text-transform: none; letter-spacing: 0; border-bottom: 0; }
+.paper-bullet { padding-left: 1.1em; text-indent: -1.1em; }
 
 .mobile-bar { display: none; }
 

@@ -1,15 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link, Navigate } from "react-router-dom";
 import CopyButton from "../components/CopyButton";
 import SuggestionCard from "../components/SuggestionCard";
 import { atsReport } from "../lib/ats";
 import { findCliches, humanScore } from "../lib/cliches";
+import { base64ToBytes, downloadBytes, patchDocx, type DocxPatchReport } from "../lib/docx";
 import { checkEvidence } from "../lib/evidence";
+import { BULLET_RE, buildStyleProfile, DEFAULT_PROFILE, scaleProfile, sizeScale, type StyleProfile, type TextStyle } from "../lib/layout";
 import { downloadResumePdf } from "../lib/pdf";
 import { buildFinalResume, resumeToText, type Decisions, type SuggestionState } from "../lib/resume";
 import { loadSession, saveSession, type Session } from "../lib/session";
 
 const STATUS_LABEL = { tinha: "já tinha", adicionada: "adicionada", faltando: "faltando" } as const;
+
+const FONT_CSS = { helvetica: "Arial, Helvetica, sans-serif", times: "'Times New Roman', Times, serif", courier: "'Courier New', monospace" };
+
+/** Estilo da prévia a partir do perfil do PDF (tamanhos em pt viram px, escalados para caber). */
+function css(st: TextStyle, scale: number): CSSProperties {
+  return {
+    fontFamily: FONT_CSS[st.family],
+    fontSize: `${(st.size * scale).toFixed(2)}px`,
+    fontWeight: st.bold ? 700 : 400,
+    fontStyle: st.italic ? "italic" : "normal",
+    color: `rgb(${st.color.join(",")})`,
+  };
+}
 
 function Delta({ before, after, suffix = "" }: { before: number; after: number; suffix?: string }) {
   const diff = after - before;
@@ -26,6 +41,8 @@ function Delta({ before, after, suffix = "" }: { before: number; after: number; 
 export default function ResultPage() {
   const [session] = useState<Session | null>(() => loadSession());
   const [decisions, setDecisions] = useState<Decisions>(() => session?.decisions ?? {});
+  const [docxReport, setDocxReport] = useState<DocxPatchReport | null>(null);
+  const [downloadError, setDownloadError] = useState("");
 
   useEffect(() => {
     if (session) saveSession({ ...session, decisions });
@@ -34,7 +51,7 @@ export default function ResultPage() {
   const data = useMemo(() => {
     if (!session) return null;
     const { result, input } = session;
-    const evidence = Object.fromEntries(result.suggestions.map((s) => [s.id, checkEvidence(s.evidence, input.resume)]));
+    const evidence = Object.fromEntries(result.suggestions.map((s) => [s.id, checkEvidence(s.evidence, input.resume, input.extra)]));
     const final = buildFinalResume(result, decisions);
     const finalText = resumeToText(final);
     return {
@@ -46,6 +63,22 @@ export default function ResultPage() {
       sectionTitles: Object.fromEntries(result.sections.map((s) => [s.id, s.title])),
     };
   }, [session, decisions]);
+
+  const profile: StyleProfile = useMemo(() => {
+    if (session?.source?.kind !== "pdf") return DEFAULT_PROFILE;
+    try {
+      const p = buildStyleProfile(session.source.layout, session.result);
+      const ctx = document.createElement("canvas").getContext("2d");
+      if (!ctx) return p;
+      const measure = (text: string, st: TextStyle) => {
+        ctx.font = `${st.bold ? "bold " : ""}${st.size}px ${FONT_CSS[st.family]}`;
+        return ctx.measureText(text).width;
+      };
+      return scaleProfile(p, sizeScale(p, measure));
+    } catch {
+      return DEFAULT_PROFILE;
+    }
+  }, [session]);
 
   if (!session || !data) return <Navigate to="/" replace />;
 
@@ -68,7 +101,25 @@ export default function ResultPage() {
     });
 
   const slug = (result.companyName || "vaga").toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  const download = () => downloadResumePdf(data.final, `curriculo-${slug || "vaga"}.pdf`);
+  const base = `curriculo-${slug || "vaga"}`;
+  const source = session.source;
+  const downloadPdf = (p: StyleProfile = profile) => downloadResumePdf(data.final, `${base}.pdf`, p);
+  const downloadDocx = async () => {
+    if (source?.kind !== "docx") return;
+    setDownloadError("");
+    try {
+      const { data: bytes, report } = await patchDocx(base64ToBytes(source.base64), result, decisions);
+      downloadBytes(bytes, `${base}.docx`, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      setDocxReport(report);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Não consegui gerar o arquivo Word.");
+    }
+  };
+  const download = () => (source?.kind === "docx" ? downloadDocx() : downloadPdf());
+  const mainLabel = source?.kind === "docx" ? "Baixar Word" : "Baixar PDF";
+  const scale = 1.25;
+  const center: CSSProperties = profile.centeredHeader ? { textAlign: "center" } : {};
+  const usesProfile = profile !== DEFAULT_PROFILE;
 
   return (
     <main className="page page-result">
@@ -204,9 +255,38 @@ export default function ResultPage() {
             <div className="section-head">
               <h2>Prévia</h2>
               <button type="button" className="primary small" onClick={download}>
-                Baixar PDF
+                {mainLabel}
               </button>
             </div>
+            <p className="format-note">
+              {source?.kind === "docx" && (
+                <>
+                  O Word sai com <strong>a mesma formatação do seu arquivo</strong> — só o texto aprovado muda. Para PDF,
+                  abra no Word ou Google Docs e salve como PDF.{" "}
+                  <button type="button" className="link-button small" onClick={() => downloadPdf(DEFAULT_PROFILE)}>
+                    Ou baixe um PDF simples
+                  </button>
+                </>
+              )}
+              {source?.kind === "pdf" && (
+                <>
+                  O PDF sai no estilo do seu currículo: fontes, tamanhos, cores, margens e marcadores. Currículos em duas
+                  colunas viram uma coluna (é o que o ATS lê melhor).{" "}
+                  <button type="button" className="link-button small" onClick={() => downloadPdf(DEFAULT_PROFILE)}>
+                    Prefiro um PDF simples
+                  </button>
+                </>
+              )}
+              {!source || source.kind === "text" ? <>Para manter a formatação original, anexe o currículo em Word (.docx) ou PDF.</> : null}
+            </p>
+            {docxReport && (
+              <p className={docxReport.missed.length ? "error" : "format-ok"} role="status">
+                {docxReport.missed.length
+                  ? `Apliquei ${docxReport.applied} mudança(s). ${docxReport.missed.length} não encontrei no arquivo e precisa(m) ser colada(s) à mão: ${docxReport.missed.map((m) => `"${m}"`).join("; ")}`
+                  : `Pronto! ${docxReport.applied} mudança(s) aplicada(s) no seu arquivo Word.`}
+              </p>
+            )}
+            {downloadError && <p className="error" role="alert">{downloadError}</p>}
             {data.cliches.length > 0 && (
               <div className="cliche-box">
                 <strong>Clichês que ainda estão no currículo</strong>
@@ -219,16 +299,31 @@ export default function ResultPage() {
                 </ul>
               </div>
             )}
-            <article className="paper">
-              <h3>{data.final.name}</h3>
-              {data.final.headline && <p className="paper-headline">{data.final.headline}</p>}
-              {data.final.contact.length > 0 && <p className="paper-contact">{data.final.contact.join(" | ")}</p>}
+            <article className={`paper${usesProfile ? " paper-styled" : ""}`} style={usesProfile ? { padding: `${profile.marginTop * 0.6}px ${profile.marginX * 0.6}px` } : undefined}>
+              <h3 style={usesProfile ? { ...css(profile.name, scale), ...center } : undefined}>{data.final.name}</h3>
+              {data.final.headline && (
+                <p className="paper-headline" style={usesProfile ? { ...css(profile.headline, scale), ...center } : undefined}>
+                  {data.final.headline}
+                </p>
+              )}
+              {data.final.contact.length > 0 && (
+                <p className="paper-contact" style={usesProfile ? { ...css(profile.contact, scale), ...center } : undefined}>
+                  {data.final.contact.join(" | ")}
+                </p>
+              )}
               {data.final.sections.map((sec) => (
-                <section key={sec.title}>
-                  <h4>{sec.title}</h4>
-                  {sec.lines.map((l, i) => (
-                    <p key={i}>{l}</p>
-                  ))}
+                <section key={sec.id}>
+                  <h4 style={usesProfile ? css(profile.heading, scale) : undefined}>{sec.title}</h4>
+                  {sec.lines.map((l, i) => {
+                    const id = sec.lineIds[i];
+                    const bulleted = usesProfile && profile.bullet && (id ? profile.bulletedLines[id] : profile.bulletedSections[sec.id]);
+                    return (
+                      <p key={i} className={bulleted ? "paper-bullet" : undefined} style={usesProfile ? css(profile.body, scale) : undefined}>
+                        {bulleted && <span aria-hidden>{profile.bullet === "·" ? "•" : profile.bullet} </span>}
+                        {usesProfile ? l.replace(BULLET_RE, "") : l}
+                      </p>
+                    );
+                  })}
                 </section>
               ))}
             </article>
@@ -239,7 +334,7 @@ export default function ResultPage() {
       <div className="mobile-bar">
         <span>{accepted} de {total} aceitas</span>
         <button type="button" className="primary small" onClick={download}>
-          Baixar PDF
+          {mainLabel}
         </button>
       </div>
     </main>

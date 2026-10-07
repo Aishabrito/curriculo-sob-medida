@@ -24,6 +24,17 @@ describe("analyze com Gemini simulado", () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain("gemini-2.5-flash");
   });
 
+  it("tenta outro modelo quando o primeiro está sobrecarregado", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fail(503, "The model is overloaded"))
+      .mockResolvedValueOnce(fail(500, "internal"))
+      .mockResolvedValueOnce(geminiText(JSON.stringify(demoResult)));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await run({ GEMINI_API_KEY: "k" })).provider).toBe("gemini");
+    expect(String(fetchMock.mock.calls[2][0])).toContain("gemini-flash-lite-latest");
+  });
+
   it("explica chave inválida", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fail(400, '{"error":{"status":"INVALID_ARGUMENT","details":[{"reason":"API_KEY_INVALID"}]}}')));
     await expect(run({ GEMINI_API_KEY: "k" })).rejects.toMatchObject({ status: 502, message: expect.stringContaining("chave do Gemini") });

@@ -71,12 +71,14 @@ function describeFailure(provider: string, status: number, body: string): Provid
     return new ProviderError(detail, `A chave do ${name} não tem permissão. Gere uma nova chave e atualize a variável ${provider.toUpperCase()}_API_KEY na Vercel.`);
   }
   if (status === 404) return new ProviderError(detail, `O modelo de IA do ${name} não foi encontrado.`, true);
-  if (status === 429) return new ProviderError(detail, `O limite grátis do ${name} acabou por agora. Tente de novo em alguns minutos.`);
-  if (status >= 500) return new ProviderError(detail, `O ${name} está instável agora. Tente de novo em alguns minutos.`);
+  // Cada modelo tem sua própria cota e sua própria fila, então limite ou
+  // sobrecarga em um deles é motivo para tentar o próximo.
+  if (status === 429) return new ProviderError(detail, `O limite grátis do ${name} acabou por agora. Tente de novo em alguns minutos.`, true);
+  if (status >= 500) return new ProviderError(detail, `O ${name} está sobrecarregado agora (erro ${status}). Tente de novo em alguns minutos.`, true);
   return new ProviderError(detail, `O ${name} recusou o pedido (erro ${status}).`);
 }
 
-const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
+const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash"];
 
 async function callGeminiModel(input: AnalyzeInput, key: string, model: string): Promise<string> {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {

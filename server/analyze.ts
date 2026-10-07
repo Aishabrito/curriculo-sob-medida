@@ -1,4 +1,4 @@
-import { extractJson, parseAnalysis } from "../shared/parseAnalysis.js";
+import { extractJson, InvalidAnalysisError, parseAnalysis } from "../shared/parseAnalysis.js";
 import type { AnalyzeInput, AnalyzeResponse } from "../shared/types.js";
 import { buildUserPrompt, SYSTEM_PROMPT } from "./prompt.js";
 
@@ -50,21 +50,76 @@ export function checkRateLimit(ip: string, perHour: number, now = Date.now()): v
   hits.set(ip, recent);
 }
 
-async function callGemini(input: AnalyzeInput, key: string, model: string): Promise<string> {
+/** Erro de um provedor de IA com uma mensagem que pode ser mostrada na tela. */
+export class ProviderError extends Error {
+  constructor(
+    message: string,
+    public userMessage: string,
+    public retryNextModel = false,
+  ) {
+    super(message);
+  }
+}
+
+function describeFailure(provider: string, status: number, body: string): ProviderError {
+  const detail = `${provider} respondeu ${status}: ${body.slice(0, 400)}`;
+  const name = provider === "gemini" ? "Gemini" : "Groq";
+  if (status === 400 && /API_KEY_INVALID|API key not valid/i.test(body)) {
+    return new ProviderError(detail, `A chave do ${name} configurada na Vercel é inválida. Confira a variável ${provider.toUpperCase()}_API_KEY e faça um novo deploy.`);
+  }
+  if (status === 401 || status === 403) {
+    return new ProviderError(detail, `A chave do ${name} não tem permissão. Gere uma nova chave e atualize a variável ${provider.toUpperCase()}_API_KEY na Vercel.`);
+  }
+  if (status === 404) return new ProviderError(detail, `O modelo de IA do ${name} não foi encontrado.`, true);
+  if (status === 429) return new ProviderError(detail, `O limite grátis do ${name} acabou por agora. Tente de novo em alguns minutos.`);
+  if (status >= 500) return new ProviderError(detail, `O ${name} está instável agora. Tente de novo em alguns minutos.`);
+  return new ProviderError(detail, `O ${name} recusou o pedido (erro ${status}).`);
+}
+
+const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
+
+async function callGeminiModel(input: AnalyzeInput, key: string, model: string): Promise<string> {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: "user", parts: [{ text: buildUserPrompt(input) }] }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.4, maxOutputTokens: 8192 },
+      // O "pensamento" do modelo conta no limite de saída, então o limite é alto
+      // para o JSON não ser cortado no meio.
+      generationConfig: { responseMimeType: "application/json", temperature: 0.4, maxOutputTokens: 32768 },
     }),
   });
-  if (!res.ok) throw new Error(`Gemini respondeu ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-  if (!text) throw new Error("Gemini não devolveu texto.");
+  if (!res.ok) throw describeFailure("gemini", res.status, await res.text());
+  const data = (await res.json()) as {
+    candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
+    promptFeedback?: { blockReason?: string };
+  };
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts?.filter((p) => !p.thought).map((p) => p.text ?? "").join("") ?? "";
+  if (data.promptFeedback?.blockReason || candidate?.finishReason === "SAFETY") {
+    throw new ProviderError(`Gemini bloqueou: ${data.promptFeedback?.blockReason ?? "SAFETY"}`, "O Gemini bloqueou o texto enviado. Tente tirar dados pessoais do currículo.");
+  }
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    throw new ProviderError("Gemini cortou a resposta (MAX_TOKENS).", "O currículo ou a vaga são longos demais para uma análise. Tente encurtar a descrição da vaga.");
+  }
+  if (!text) throw new ProviderError(`Gemini não devolveu texto (${candidate?.finishReason ?? "sem motivo"}).`, "O Gemini não devolveu resposta. Tente de novo.");
   return text;
+}
+
+/** Tenta o modelo configurado e, se ele não existir mais, os próximos da lista. */
+async function callGemini(input: AnalyzeInput, key: string, preferred?: string): Promise<string> {
+  const models = [...new Set([preferred, ...GEMINI_MODELS].filter((m): m is string => Boolean(m)))];
+  let last: unknown;
+  for (const model of models) {
+    try {
+      return await callGeminiModel(input, key, model);
+    } catch (err) {
+      last = err;
+      if (!(err instanceof ProviderError && err.retryNextModel)) throw err;
+    }
+  }
+  throw last;
 }
 
 async function callGroq(input: AnalyzeInput, key: string, model: string): Promise<string> {
@@ -82,10 +137,10 @@ async function callGroq(input: AnalyzeInput, key: string, model: string): Promis
       ],
     }),
   });
-  if (!res.ok) throw new Error(`Groq respondeu ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw describeFailure("groq", res.status, await res.text());
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const text = data.choices?.[0]?.message?.content ?? "";
-  if (!text) throw new Error("Groq não devolveu texto.");
+  if (!text) throw new ProviderError("Groq não devolveu texto.", "O Groq não devolveu resposta. Tente de novo.");
   return text;
 }
 
@@ -95,7 +150,7 @@ export async function analyze(body: unknown, env: ServerEnv, ip = "anon"): Promi
 
   const providers: { name: AnalyzeResponse["provider"]; run: () => Promise<string> }[] = [];
   if (env.GEMINI_API_KEY) {
-    providers.push({ name: "gemini", run: () => callGemini(input, env.GEMINI_API_KEY!, env.GEMINI_MODEL || "gemini-2.5-flash") });
+    providers.push({ name: "gemini", run: () => callGemini(input, env.GEMINI_API_KEY!, env.GEMINI_MODEL) });
   }
   if (env.GROQ_API_KEY) {
     providers.push({ name: "groq", run: () => callGroq(input, env.GROQ_API_KEY!, env.GROQ_MODEL || "llama-3.3-70b-versatile") });
@@ -107,14 +162,22 @@ export async function analyze(body: unknown, env: ServerEnv, ip = "anon"): Promi
   checkRateLimit(ip, Number(env.RATE_LIMIT_PER_HOUR) || 8);
 
   const errors: string[] = [];
+  const userMessages: string[] = [];
   for (const p of providers) {
     try {
       const result = parseAnalysis(extractJson(await p.run()));
       return { result, provider: p.name };
     } catch (err) {
       errors.push(`${p.name}: ${err instanceof Error ? err.message : String(err)}`);
+      userMessages.push(
+        err instanceof ProviderError
+          ? err.userMessage
+          : err instanceof InvalidAnalysisError
+            ? `A IA devolveu uma resposta incompleta (${err.message}) Tente de novo.`
+            : "Não consegui falar com a IA. Tente de novo em alguns minutos.",
+      );
     }
   }
   console.error("Falha em todos os provedores:", errors.join(" | "));
-  throw new HttpError(502, "A IA está ocupada agora (provavelmente o limite grátis do dia). Tente de novo em alguns minutos.");
+  throw new HttpError(502, userMessages.join(" "));
 }

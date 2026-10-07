@@ -64,7 +64,7 @@ Sem chave, o site funciona normalmente com o exemplo pronto.
 2. Em **Settings → Environment Variables**, adicione `GEMINI_API_KEY` (e, se quiser, `GROQ_API_KEY`, de [console.groq.com/keys](https://console.groq.com/keys)).
 3. Faça o deploy. Pronto.
 
-Variáveis opcionais: `GEMINI_MODEL` (padrão `gemini-2.5-flash`), `GROQ_MODEL` (padrão `llama-3.3-70b-versatile`) e `RATE_LIMIT_PER_HOUR` (padrão 8 análises por pessoa por hora).
+Variáveis opcionais: `GEMINI_MODEL` (padrão `gemini-flash-latest`), `GROQ_MODEL` (padrão `llama-3.3-70b-versatile`) e `RATE_LIMIT_PER_HOUR` (padrão 8 análises por pessoa por hora).
 
 > No plano gratuito do Gemini, o Google pode usar os textos enviados para melhorar os modelos. O site avisa isso na tela inicial.
 

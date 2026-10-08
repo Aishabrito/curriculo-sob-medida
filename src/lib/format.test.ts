@@ -22,7 +22,7 @@ const result: AnalysisResult = {
     { id: "m3", sectionId: "resumo", lineId: null, original: "", suggested: "Estudante de SI que constrói interfaces em React.", reason: "", evidence: "", requirement: "" },
     { id: "m4", sectionId: "s2", lineId: "s2l1", original: "", suggested: "React.js, JavaScript (ES6+), Git e GitHub", reason: "", evidence: "", requirement: "" },
   ],
-  keywords: [], gaps: [], companyBridge: null, recruiterMessage: "", interviewQuestions: [],
+  keywords: [], gaps: [], companyBridge: null, recruiterMessage: "", interviewQuestions: [], knockouts: [],
 };
 const all = Object.fromEntries(result.suggestions.map((s) => [s.id, { decision: "aceita" as const }]));
 
@@ -142,5 +142,25 @@ describe("evidência vinda do campo extra", () => {
     expect(checkEvidence("Feira Livre em React", cv, extra)).toBe("verificada");
     expect(checkEvidence("curso de TypeScript da Alura", cv, extra)).toBe("do-relato");
     expect(checkEvidence("certificação AWS", cv, extra)).toBe("sem-evidencia");
+  });
+});
+
+describe("versão em inglês no Word", () => {
+  it("troca cada linha pela tradução mantendo a formatação", async () => {
+    const { replaceTextsInDocx } = await import("./docx");
+    const { data, missed } = await replaceTextsInDocx(await makeDocx(), [
+      { from: "Estudante de SI", to: "IS Student" },
+      { from: "Projetos", to: "Projects" },
+      { from: "Feira Livre: site em React com dados da prefeitura.", to: "Feira Livre: React site using city data." },
+      { from: "Habilidades", to: "Skills" },
+    ]);
+    expect(missed).toEqual([]);
+    const xml = await (await JSZip.loadAsync(data)).file("word/document.xml")!.async("string");
+    expect(xml).toContain(">IS Student<");
+    expect(xml).toContain(">Projects<");
+    expect(xml).toContain(">Skills<");
+    // "Feira Livre:" continua no pedaço em negrito; o resto em inglês fica no pedaço normal.
+    expect(xml).toMatch(/1F3D2B"\/><\/w:rPr><w:t[^>]*>Feira Livre:<\/w:t>/);
+    expect(xml).toContain(" React site using city data.");
   });
 });

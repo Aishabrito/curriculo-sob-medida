@@ -25,6 +25,9 @@ export interface PdfLayout {
   pageWidth: number;
   pageHeight: number;
   lines: StyledLine[];
+  pages?: number;
+  /** Tem alguma imagem desenhada (foto, logo, ícone)? */
+  hasImages?: boolean;
 }
 
 export interface TextStyle {
@@ -131,7 +134,7 @@ interface PdfTextItem {
 interface PdfPageLike {
   getViewport(o: { scale: number }): { width: number; height: number; convertToViewportPoint(x: number, y: number): number[] };
   getTextContent(): Promise<{ items: unknown[]; styles: Record<string, { fontFamily?: string }> }>;
-  getOperatorList(): Promise<unknown>;
+  getOperatorList(): Promise<{ fnArray?: number[] }>;
   commonObjs: { get(id: string): unknown; has?(id: string): boolean };
   render(params: Record<string, unknown>): { promise: Promise<void> };
 }
@@ -176,8 +179,9 @@ async function sampleColors(page: PdfPageLike, lines: (StyledLine & { pdfX: numb
   }
 }
 
-export async function readPdfLayout(doc: { numPages: number; getPage(n: number): Promise<unknown> }): Promise<PdfLayout> {
+export async function readPdfLayout(doc: { numPages: number; getPage(n: number): Promise<unknown> }, imageOps: number[] = []): Promise<PdfLayout> {
   const lines: StyledLine[] = [];
+  let hasImages = false;
   let pageWidth = DEFAULT_PROFILE.pageWidth;
   let pageHeight = DEFAULT_PROFILE.pageHeight;
 
@@ -190,7 +194,9 @@ export async function readPdfLayout(doc: { numPages: number; getPage(n: number):
     }
     const content = await page.getTextContent();
     try {
-      await page.getOperatorList(); // carrega as fontes para sabermos os nomes reais
+      // Carrega as fontes (para sabermos os nomes reais) e mostra se há imagens.
+      const ops = await page.getOperatorList();
+      if (ops.fnArray?.some((fn) => imageOps.includes(fn))) hasImages = true;
     } catch {
       /* segue sem o nome real da fonte */
     }
@@ -251,7 +257,7 @@ export async function readPdfLayout(doc: { numPages: number; getPage(n: number):
     lines.push(...visible.map(({ text, page: p, x, y, width, size, bold, italic, family, color }) => ({ text, page: p, x, y, width, size, bold, italic, family, color })));
   }
 
-  return { pageWidth, pageHeight, lines };
+  return { pageWidth, pageHeight, lines, pages: doc.numPages, hasImages };
 }
 
 // ---------------------------------------------------------------------------

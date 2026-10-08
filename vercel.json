@@ -1,4 +1,16 @@
 {
-  "functions": { "api/analyze.ts": { "maxDuration": 60 } },
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
+  "functions": {
+    "api/analyze.ts": {
+      "maxDuration": 60
+    },
+    "api/extra.ts": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
 }

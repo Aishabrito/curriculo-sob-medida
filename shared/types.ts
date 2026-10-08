@@ -69,6 +69,18 @@ export interface InterviewQuestion {
   tip: string;
 }
 
+export type KnockoutStatus = "tem" | "nao-tem" | "nao-claro";
+
+/** Requisito que elimina na triagem (período, idioma, horário, local…). */
+export interface Knockout {
+  requirement: string;
+  status: KnockoutStatus;
+  /** Trecho literal do currículo que mostra que a pessoa atende. */
+  evidence: string;
+  /** O que fazer: deixar explícito no currículo, ou como contornar. */
+  fix: string;
+}
+
 export interface AnalysisResult {
   jobTitle: string;
   companyName: string;
@@ -80,11 +92,54 @@ export interface AnalysisResult {
   companyBridge: CompanyBridge | null;
   recruiterMessage: string;
   interviewQuestions: InterviewQuestion[];
+  knockouts: Knockout[];
 }
 
 export interface AnalyzeResponse {
   result: AnalysisResult;
   provider: "gemini" | "groq";
+}
+
+// ---------------------------------------------------------------------------
+// Extras sob demanda (só chamam a IA quando a pessoa clica)
+
+export interface ExtraBase {
+  job: string;
+  company?: string;
+  /** Currículo final, já com as mudanças aceitas. */
+  resume: string;
+  extra?: string;
+}
+
+export interface EnglishSource {
+  headline: string;
+  sections: { id: string; title: string; lines: string[] }[];
+}
+
+export type ExtraRequest =
+  | ({ task: "candidatura" } & ExtraBase)
+  | ({ task: "ingles"; source: EnglishSource } & ExtraBase)
+  | ({ task: "entrevista"; question: string; answer: string } & ExtraBase);
+
+export interface Application {
+  subject: string;
+  email: string;
+  coverLetter: string;
+}
+
+export type EnglishResume = EnglishSource;
+
+export interface InterviewFeedback {
+  score: number;
+  strengths: string[];
+  improve: string[];
+  betterAnswer: string;
+}
+
+export interface ExtraResponseMap {
+  candidatura: Application;
+  ingles: EnglishResume;
+  entrevista: InterviewFeedback;
 }
 
 export interface ApiError {

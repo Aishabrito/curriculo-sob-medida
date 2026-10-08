@@ -37,14 +37,16 @@ FORMATO DA RESPOSTA (JSON)
   "gaps": [ { "requirement": "o que a vaga pede e o currículo não mostra", "why": "por que isso pesa", "action": "ação concreta e gratuita para resolver (ex.: mini projeto específico, curso gratuito específico)", "timeframe": "ex.: 1 fim de semana" } ],
   "companyBridge": { "sentence": "1 frase verdadeira ligando a história da pessoa aos valores da empresa", "valuesMatched": ["valor da empresa"] } ou null se não houver informação da empresa,
   "recruiterMessage": "mensagem curta (até 600 caracteres) para mandar ao recrutador no LinkedIn, natural, sem bajulação, citando 1 fato concreto do currículo",
-  "interviewQuestions": [ { "question": "pergunta provável", "tip": "como responder usando algo real do currículo" } ]
+  "interviewQuestions": [ { "question": "pergunta provável", "tip": "como responder usando algo real do currículo" } ],
+  "knockouts": [ { "requirement": "requisito que elimina na triagem, curto (ex.: 'Cursando a partir do 3º período')", "status": "tem | nao-tem | nao-claro", "evidence": "trecho COPIADO LITERALMENTE do currículo ou do <adicionar> que mostra que atende (\"\" se não houver)", "fix": "o que fazer: como deixar explícito no currículo, ou como contornar honestamente" } ]
 }
 
 QUANTIDADES
 - "sections": reproduza TODAS as seções e linhas do currículo, na ordem, com o texto literal (pode limpar espaços e marcadores de lista). Não inclua nome e contato nas seções.
 - "suggestions": de 5 a 12 mudanças, priorizando as que mais aproximam o currículo da vaga. Se o currículo não tiver resumo profissional, sugira um (lineId null, sectionId de uma seção nova chamada "resumo") — sempre com evidência.
 - "keywords": de 8 a 20 termos técnicos e comportamentais da vaga.
-- "gaps": até 5. "interviewQuestions": 3 a 5.`;
+- "gaps": até 5. "interviewQuestions": 3 a 5.
+- "knockouts": de 2 a 8 requisitos ELIMINATÓRIOS da vaga — os que um recrutador ou filtro usa para cortar na hora: curso/formação, período ou ano de formatura, idioma com nível, carga horária, turno, presencial/híbrido e cidade, disponibilidade para início, idade mínima, ser estudante ativo, pré-requisitos de programas afirmativos. NÃO inclua habilidades técnicas comuns (essas vão em "keywords"). "tem" só com evidência literal; "nao-claro" quando o currículo não diz (ex.: não informa o período); "nao-tem" quando o currículo mostra que não atende.`;
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n[...cortado]` : s);
 

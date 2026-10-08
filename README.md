@@ -23,7 +23,12 @@ A maioria dos "otimizadores de currículo" devolve um texto novo, cheio de palav
 | **Raio-X do ATS** | Mostra quais termos da vaga você já tinha, quais foram adicionados e quais faltam, com a porcentagem antes e depois. A conta é feita no navegador, palavra por palavra, sem "chute" da IA. |
 | **Detector de texto robótico** | Destaca clichês ("proativa", "apaixonada por", "sinergia"…) e dá uma nota de "soa humano", com dica do que colocar no lugar. |
 | **Plano para as lacunas** | O que a vaga pede e você ainda não mostra vira uma ação concreta e gratuita ("adicione testes com Vitest no projeto X — 2 noites"). A palavra-chave não é enfiada no currículo. |
-| **Ponte com a empresa** | Se você contar os valores da empresa, recebe uma frase verdadeira ligando a sua história a eles, uma mensagem para o recrutador e as perguntas prováveis da entrevista. |
+| **Requisitos eliminatórios** | Separa da vaga o que corta na triagem (período, idioma, horário, presencial, cidade) e mostra se você atende, não atende ou se o currículo não deixa claro, com a correção. O "você atende" só vale se a prova existir no currículo. |
+| **Olhar de recrutador em 6 segundos** | Checagem sem IA do que faz um currículo de estágio ser descartado no Brasil: mais de 1 página, CPF/RG/endereço/idade/estado civil, foto, e-mail pouco profissional, falta de LinkedIn/GitHub, datas invertidas, frases longas. |
+| **Ponte com a empresa** | Se você contar os valores da empresa, recebe uma frase verdadeira ligando a sua história a eles. |
+| **Candidatura pronta** | Mensagem curta para o LinkedIn e, num clique, e-mail de candidatura e carta de apresentação feitos do currículo já aprovado. |
+| **Versão em inglês** | Tradução natural do currículo final (com os termos da vaga), no mesmo Word ou no mesmo estilo de PDF. Para vagas remotas e internacionais. |
+| **Treino de entrevista** | Perguntas prováveis para a vaga: você responde, recebe nota, pontos fortes, o que melhorar e uma versão mais forte — só com fatos seus. |
 | **O que não está no currículo** | Campo opcional para contar projetos, cursos e conquistas que ficaram de fora. A IA encaixa na seção certa e cada mudança mostra "veio do que você contou". |
 | **Mantém a sua formatação** | Word (.docx): o site edita o próprio arquivo, então fonte, cor, marcadores e espaçamento ficam idênticos e só o texto aprovado muda. PDF: o site lê o estilo do original (fontes, tamanhos, negrito, cores, margens, marcadores, alinhamento) e gera o novo PDF no mesmo estilo, ajustando o tamanho quando a fonte original não está disponível. |
 | **PDF que o ATS lê** | Texto selecionável, uma coluna. Também dá para baixar um PDF simples. |
@@ -45,7 +50,7 @@ você aprova → Word: edita o .docx original (JSZip) · PDF: novo PDF no estilo
 
 - **React + Vite + TypeScript**, sem biblioteca de UI.
 - **A chave da IA fica no servidor** (função serverless na Vercel). Quem usa o site não precisa de chave nenhuma.
-- **IA gratuita:** Google Gemini, com Groq de reserva se o Gemini falhar ou estourar a cota.
+- **IA gratuita:** Google Gemini, com Groq de reserva se o Gemini falhar ou estourar a cota. A análise é uma chamada só; e-mail/carta, inglês e treino de entrevista só chamam a IA quando a pessoa clica.
 - **A resposta da IA é tratada como dado não confiável:** é validada campo a campo (`shared/parseAnalysis.ts`), e o texto do usuário vai entre tags com instrução para ignorar comandos escondidos nele.
 - **Privacidade:** o arquivo é lido no navegador e só o texto é enviado. Nada é salvo em servidor; o resultado fica só na aba (`sessionStorage`).
 
@@ -66,18 +71,19 @@ Sem chave, o site funciona normalmente com o exemplo pronto.
 2. Em **Settings → Environment Variables**, adicione `GEMINI_API_KEY` (e, se quiser, `GROQ_API_KEY`, de [console.groq.com/keys](https://console.groq.com/keys)).
 3. Faça o deploy. Pronto.
 
-Variáveis opcionais: `GEMINI_MODEL` (padrão `gemini-flash-latest`), `GROQ_MODEL` (padrão `llama-3.3-70b-versatile`) e `RATE_LIMIT_PER_HOUR` (padrão 8 análises por pessoa por hora).
+Variáveis opcionais: `GEMINI_MODEL` (padrão `gemini-flash-latest`), `GROQ_MODEL` (padrão `llama-3.3-70b-versatile`) `RATE_LIMIT_PER_HOUR` (padrão 8 análises por pessoa por hora) e `RATE_LIMIT_EXTRAS_PER_HOUR` (padrão 30 extras por hora).
 
 > No plano gratuito do Gemini, o Google pode usar os textos enviados para melhorar os modelos. O site avisa isso na tela inicial.
 
 ## Estrutura
 
 ```
-api/analyze.ts          função serverless (Vercel)
-server/                 chamada às IAs, prompt, validação de entrada, limite por IP
+api/analyze.ts          função serverless da análise (Vercel)
+api/extra.ts            função dos extras: e-mail e carta, inglês, treino de entrevista
+server/                 chamada às IAs (ai.ts), prompts, validação de entrada, limite por IP
 shared/                 tipos e validação da resposta da IA (usados nos dois lados)
 src/pages/              tela do formulário e tela de resultado
-src/lib/                provas, ATS, clichês, montagem do currículo, leitura de arquivos,
+src/lib/                provas, ATS, clichês, checagem de recrutador, montagem do currículo, leitura de arquivos,
                         layout.ts (estilo do PDF), pdf.ts (gera o PDF), docx.ts (edita o Word)
 src/demo/example.ts     exemplo fictício usado no "Ver um exemplo pronto"
 ```

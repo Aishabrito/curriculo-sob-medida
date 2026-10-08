@@ -83,20 +83,22 @@ function setParagraphText(p: XElement, text: string): void {
   replaceRange(p, prefix.length, current.length, text.replace(BULLET_RE, ""));
 }
 
-function findParagraph(paras: XElement[], original: string): { p: XElement; start: number; end: number } | null {
-  const re = flexible(original);
-  if (re) {
-    for (const p of paras) {
-      const m = re.exec(paraText(p));
-      if (m) return { p, start: m.index, end: m.index + m[0].length };
-    }
-  }
+/** Acha o parágrafo do texto: primeiro um parágrafo que seja só ele, depois um que o contenha. */
+function findParagraph(paras: XElement[], original: string, used?: Set<XElement>): { p: XElement; start: number; end: number } | null {
+  const free = used ? paras.filter((p) => !used.has(p)) : paras;
   const norm = normalize(original.replace(BULLET_RE, ""));
-  for (const p of paras) {
+  for (const p of free) {
     const full = paraText(p);
     if (norm && normalize(full.replace(BULLET_RE, "")) === norm) {
       const prefix = full.match(BULLET_RE)?.[0] ?? "";
       return { p, start: prefix.length, end: full.length };
+    }
+  }
+  const re = flexible(original);
+  if (re) {
+    for (const p of free) {
+      const m = re.exec(paraText(p));
+      if (m) return { p, start: m.index, end: m.index + m[0].length };
     }
   }
   return null;
@@ -214,6 +216,34 @@ export async function patchDocx(
   zip.file("word/document.xml", new XMLSerializer().serializeToString(doc as never));
   const data = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
   return { data, report };
+}
+
+/**
+ * Troca textos inteiros no Word mantendo a formatação — usado para a versão
+ * em inglês: cada linha, título e o subtítulo viram a tradução.
+ */
+export async function replaceTextsInDocx(
+  original: Uint8Array,
+  pairs: { from: string; to: string }[],
+): Promise<{ data: Uint8Array; missed: string[] }> {
+  const zip = await JSZip.loadAsync(original);
+  const file = zip.file("word/document.xml");
+  if (!file) throw new Error("Esse arquivo Word não tem o conteúdo esperado.");
+  const doc = new DOMParser().parseFromString(await file.async("string"), "text/xml") as unknown as XDocument;
+  const paras = paragraphs(doc);
+  const used = new Set<XElement>();
+  const missed: string[] = [];
+  // Localiza tudo antes de trocar qualquer coisa.
+  const hits = pairs.map((pair) => {
+    if (!pair.from.trim() || pair.from === pair.to) return null;
+    const hit = findParagraph(paras, pair.from, used);
+    if (hit) used.add(hit.p);
+    else missed.push(pair.from);
+    return hit;
+  });
+  hits.forEach((hit, i) => hit && replaceRange(hit.p, hit.start, hit.end, pairs[i].to.replace(BULLET_RE, "")));
+  zip.file("word/document.xml", new XMLSerializer().serializeToString(doc as never));
+  return { data: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), missed };
 }
 
 export function base64ToBytes(b64: string): Uint8Array {

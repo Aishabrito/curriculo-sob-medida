@@ -8,7 +8,7 @@ export const ACCEPTED_FILES = ".pdf,.docx,.txt,.md";
 
 export type SourceFile =
   | { kind: "pdf"; name: string; layout: PdfLayout }
-  | { kind: "docx"; name: string; base64: string }
+  | { kind: "docx"; name: string; base64: string; hasImages?: boolean }
   | { kind: "text"; name: string };
 
 export interface Extracted {
@@ -21,7 +21,9 @@ async function fromPdf(file: File): Promise<Extracted> {
   const { default: workerUrl } = await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url");
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
   const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), fontExtraProperties: true }).promise;
-  const layout = await readPdfLayout(doc);
+  const ops = pdfjs.OPS as Record<string, number>;
+  const imageOps = ["paintImageXObject", "paintInlineImageXObject", "paintJpegXObject"].map((k) => ops[k]).filter((n) => typeof n === "number");
+  const layout = await readPdfLayout(doc, imageOps);
   const text = layout.lines
     .map((l, i) => {
       const prev = layout.lines[i - 1];
@@ -43,7 +45,15 @@ async function fromDocx(file: File): Promise<Extracted> {
   const mammoth = await import("mammoth");
   const buffer = await file.arrayBuffer();
   const { value } = await mammoth.extractRawText({ arrayBuffer: buffer });
-  return { text: value, source: { kind: "docx", name: file.name, base64: toBase64(buffer) } };
+  let hasImages = false;
+  try {
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(buffer);
+    hasImages = Object.keys(zip.files).some((f) => /^word\/media\/.+\.(png|jpe?g|gif|bmp|webp|emf|wmf)$/i.test(f));
+  } catch {
+    /* sem essa informação */
+  }
+  return { text: value, source: { kind: "docx", name: file.name, base64: toBase64(buffer), hasImages } };
 }
 
 export function cleanText(text: string): string {

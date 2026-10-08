@@ -5,6 +5,8 @@ import type {
   Importance,
   InterviewQuestion,
   Keyword,
+  Knockout,
+  KnockoutStatus,
   ResumeSection,
   Suggestion,
 } from "./types.js";
@@ -99,6 +101,17 @@ function parseQuestions(v: unknown): InterviewQuestion[] {
     .filter((q) => q.question);
 }
 
+function parseKnockouts(v: unknown): Knockout[] {
+  return arr(v)
+    .filter(isObj)
+    .map((k) => {
+      const s = str(k.status).toLowerCase();
+      const status: KnockoutStatus = s.startsWith("tem") || s === "sim" ? "tem" : s.startsWith("nao-t") || s.startsWith("não t") || s === "nao" ? "nao-tem" : "nao-claro";
+      return { requirement: str(k.requirement, 200), status, evidence: str(k.evidence, 400), fix: str(k.fix, 600) };
+    })
+    .filter((k) => k.requirement);
+}
+
 export function parseAnalysis(raw: unknown): AnalysisResult {
   if (!isObj(raw)) throw new InvalidAnalysisError("Resposta da IA não é um objeto.");
   const sections = parseSections(raw.sections);
@@ -119,6 +132,7 @@ export function parseAnalysis(raw: unknown): AnalysisResult {
     companyBridge: parseBridge(raw.companyBridge),
     recruiterMessage: str(raw.recruiterMessage, 2000),
     interviewQuestions: parseQuestions(raw.interviewQuestions).slice(0, 6),
+    knockouts: parseKnockouts(raw.knockouts).slice(0, 8),
   };
 }
 

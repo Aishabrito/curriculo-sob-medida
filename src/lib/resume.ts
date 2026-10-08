@@ -1,4 +1,4 @@
-import type { AnalysisResult, ResumeSection, Suggestion } from "../../shared/types";
+import type { AnalysisResult, EnglishResume, EnglishSource, ResumeSection, Suggestion } from "../../shared/types";
 
 export type Decision = "pendente" | "aceita" | "recusada";
 
@@ -78,6 +78,32 @@ export function buildFinalResume(result: AnalysisResult, decisions: Decisions): 
     ]
       .filter((s) => s.lines.length),
   };
+}
+
+export function toEnglishSource(r: FinalResume): EnglishSource {
+  return { headline: r.headline, sections: r.sections.map(({ id, title, lines }) => ({ id, title, lines })) };
+}
+
+/** Mesmo currículo, com os textos trocados pela tradução (seção por seção, linha por linha). */
+export function applyEnglish(r: FinalResume, en: EnglishResume): FinalResume {
+  return {
+    ...r,
+    headline: en.headline || r.headline,
+    sections: r.sections.map((s, i) => {
+      const t = en.sections.find((x) => x.id === s.id) ?? en.sections[i];
+      return { ...s, title: t?.title || s.title, lines: s.lines.map((l, j) => t?.lines[j] || l) };
+    }),
+  };
+}
+
+/** Pares português → inglês para trocar no Word. */
+export function englishPairs(r: FinalResume, en: FinalResume): { from: string; to: string }[] {
+  const pairs = [{ from: r.headline, to: en.headline }];
+  r.sections.forEach((s, i) => {
+    pairs.push({ from: s.title, to: en.sections[i].title });
+    s.lines.forEach((l, j) => pairs.push({ from: l, to: en.sections[i].lines[j] }));
+  });
+  return pairs;
 }
 
 export function resumeToText(r: FinalResume): string {

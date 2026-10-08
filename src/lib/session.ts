@@ -1,4 +1,4 @@
-import type { AnalysisResult, AnalyzeInput, AnalyzeResponse, ApiError } from "../../shared/types";
+import type { AnalysisResult, AnalyzeInput, AnalyzeResponse, ApiError, ExtraRequest, ExtraResponseMap } from "../../shared/types";
 import type { SourceFile } from "./extractText";
 import type { Decisions } from "./resume";
 
@@ -48,6 +48,19 @@ export async function requestAnalysis(input: AnalyzeInput, signal?: AbortSignal)
     signal,
   });
   const data = (await res.json().catch(() => ({ error: "Resposta inesperada do servidor." }))) as AnalyzeResponse | ApiError;
+  if (!res.ok || "error" in data) throw new Error("error" in data ? data.error : `Erro ${res.status}`);
+  return data.result;
+}
+
+export async function requestExtra<T extends ExtraRequest["task"]>(
+  req: Extract<ExtraRequest, { task: T }>,
+): Promise<ExtraResponseMap[T]> {
+  const res = await fetch("/api/extra", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  const data = (await res.json().catch(() => ({ error: "Resposta inesperada do servidor." }))) as { result: ExtraResponseMap[T] } | ApiError;
   if (!res.ok || "error" in data) throw new Error("error" in data ? data.error : `Erro ${res.status}`);
   return data.result;
 }

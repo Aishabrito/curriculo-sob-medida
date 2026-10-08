@@ -234,6 +234,26 @@ export const demoResult: AnalysisResult = {
   },
   recruiterMessage:
     "Oi, [nome]! Vi a vaga de estágio front-end na Nuvem Verde e me identifiquei: estudo SI na UFF e criei o Feira Livre Online, um app em React que usa dados abertos de Niterói para mostrar as feiras por bairro. Gosto muito de produto com impacto local, então o app de compostagem chamou minha atenção. Já me candidatei — se fizer sentido, adoraria conversar. Obrigada!",
+  knockouts: [
+    {
+      requirement: "Estudante de Ciência da Computação, SI ou áreas afins",
+      status: "tem",
+      evidence: "Bacharelado em Sistemas de Informação - Universidade Federal Fluminense (UFF), 5º período",
+      fix: "",
+    },
+    {
+      requirement: "Híbrido no Rio de Janeiro",
+      status: "tem",
+      evidence: "Niterói - RJ",
+      fix: "Niterói fica perto do Rio, mas deixe explícito: \"Disponível para trabalho híbrido no Rio de Janeiro\".",
+    },
+    {
+      requirement: "Disponibilidade de 6h por dia",
+      status: "nao-claro",
+      evidence: "",
+      fix: "O currículo não diz seu horário. Acrescente no topo: \"Disponibilidade: 6h/dia (manhã ou tarde)\" — sem isso, alguns filtros descartam.",
+    },
+  ],
   interviewQuestions: [
     {
       question: "Me conta sobre um projeto do qual você se orgulha.",

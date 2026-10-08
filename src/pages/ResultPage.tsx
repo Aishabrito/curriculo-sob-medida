@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link, Navigate } from "react-router-dom";
-import CopyButton from "../components/CopyButton";
+import ApplicationPanel from "../components/ApplicationPanel";
+import InterviewTrainer from "../components/InterviewTrainer";
+import Knockouts from "../components/Knockouts";
+import RecruiterChecklist from "../components/RecruiterChecklist";
 import SuggestionCard from "../components/SuggestionCard";
+import { demoEnglish } from "../demo/extras";
 import { atsReport } from "../lib/ats";
 import { findCliches, humanScore } from "../lib/cliches";
-import { base64ToBytes, downloadBytes, patchDocx, type DocxPatchReport } from "../lib/docx";
+import { base64ToBytes, downloadBytes, patchDocx, replaceTextsInDocx, type DocxPatchReport } from "../lib/docx";
 import { checkEvidence } from "../lib/evidence";
 import { BULLET_RE, buildStyleProfile, DEFAULT_PROFILE, scaleProfile, sizeScale, type StyleProfile, type TextStyle } from "../lib/layout";
 import { downloadResumePdf } from "../lib/pdf";
-import { buildFinalResume, resumeToText, type Decisions, type SuggestionState } from "../lib/resume";
-import { loadSession, saveSession, type Session } from "../lib/session";
+import { recruiterChecks } from "../lib/recruiterChecks";
+import { applyEnglish, buildFinalResume, englishPairs, resumeToText, toEnglishSource, type Decisions, type FinalResume, type SuggestionState } from "../lib/resume";
+import { loadSession, requestExtra, saveSession, type Session } from "../lib/session";
 
 const STATUS_LABEL = { tinha: "já tinha", adicionada: "adicionada", faltando: "faltando" } as const;
 
@@ -43,6 +48,10 @@ export default function ResultPage() {
   const [decisions, setDecisions] = useState<Decisions>(() => session?.decisions ?? {});
   const [docxReport, setDocxReport] = useState<DocxPatchReport | null>(null);
   const [downloadError, setDownloadError] = useState("");
+  const [lang, setLang] = useState<"pt" | "en">("pt");
+  const [english, setEnglish] = useState<{ resume: FinalResume; madeFor: string } | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState("");
 
   useEffect(() => {
     if (session) saveSession({ ...session, decisions });
@@ -59,8 +68,15 @@ export default function ResultPage() {
       final,
       ats: atsReport(input.resume, finalText, result.keywords),
       human: { before: humanScore(input.resume), after: humanScore(finalText) },
+      finalText,
       cliches: findCliches(finalText),
       sectionTitles: Object.fromEntries(result.sections.map((s) => [s.id, s.title])),
+      checks: recruiterChecks({
+        text: finalText,
+        job: input.job,
+        pages: session.source?.kind === "pdf" ? session.source.layout.pages : undefined,
+        hasImages: session.source?.kind === "pdf" ? session.source.layout.hasImages : session.source?.kind === "docx" ? session.source.hasImages : false,
+      }),
     };
   }, [session, decisions]);
 
@@ -103,20 +119,51 @@ export default function ResultPage() {
   const slug = (result.companyName || "vaga").toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   const base = `curriculo-${slug || "vaga"}`;
   const source = session.source;
-  const downloadPdf = (p: StyleProfile = profile) => downloadResumePdf(data.final, `${base}.pdf`, p);
+  const englishFresh = english && english.madeFor === data.finalText ? english.resume : null;
+  const showEnglish = lang === "en" && englishFresh;
+  const shown = showEnglish ? englishFresh : data.final;
+  const fileBase = showEnglish ? `${base}-en` : base;
+  const extraBase = { job: session.input.job, company: session.input.company, resume: data.finalText, extra: session.input.extra };
+
+  const translate = async () => {
+    setTranslating(true);
+    setTranslateError("");
+    try {
+      const src = toEnglishSource(data.final);
+      const en = session.demo ? demoEnglish(src) : await requestExtra({ task: "ingles", ...extraBase, source: src });
+      setEnglish({ resume: applyEnglish(data.final, en), madeFor: data.finalText });
+      setLang("en");
+    } catch (err) {
+      setTranslateError(err instanceof Error ? err.message : "Não consegui traduzir agora.");
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const downloadPdf = (p: StyleProfile = profile) => downloadResumePdf(shown, `${fileBase}.pdf`, p);
   const downloadDocx = async () => {
     if (source?.kind !== "docx") return;
     setDownloadError("");
     try {
-      const { data: bytes, report } = await patchDocx(base64ToBytes(source.base64), result, decisions);
-      downloadBytes(bytes, `${base}.docx`, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      const patched = await patchDocx(base64ToBytes(source.base64), result, decisions);
+      let bytes = patched.data;
+      const report = { ...patched.report };
+      if (showEnglish) {
+        const tr = await replaceTextsInDocx(bytes, englishPairs(data.final, englishFresh));
+        bytes = tr.data;
+        report.missed = [...report.missed, ...tr.missed];
+      }
+      downloadBytes(bytes, `${fileBase}.docx`, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       setDocxReport(report);
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : "Não consegui gerar o arquivo Word.");
     }
   };
   const download = () => (source?.kind === "docx" ? downloadDocx() : downloadPdf());
-  const mainLabel = source?.kind === "docx" ? "Baixar Word" : "Baixar PDF";
+  const mainLabel = `${source?.kind === "docx" ? "Baixar Word" : "Baixar PDF"}${showEnglish ? " (inglês)" : ""}`;
+  const knockouts = result.knockouts ?? [];
+  const attention = data.checks.filter((c) => c.level !== "ok").length;
+  const koProblems = knockouts.filter((k) => k.status !== "tem").length;
   const scale = 1.25;
   const center: CSSProperties = profile.centeredHeader ? { textAlign: "center" } : {};
   const usesProfile = profile !== DEFAULT_PROFILE;
@@ -155,10 +202,29 @@ export default function ResultPage() {
         </div>
       </section>
 
+      <nav className="jump" aria-label="Seções do resultado">
+        {knockouts.length > 0 && <a href="#requisitos">Requisitos{koProblems > 0 && <span className="jump-badge">{koProblems}</span>}</a>}
+        <a href="#checagem">Checagem{attention > 0 && <span className="jump-badge">{attention}</span>}</a>
+        <a href="#mudancas">Mudanças</a>
+        <a href="#ats">ATS</a>
+        <a href="#candidatura">Candidatura</a>
+        {result.interviewQuestions.length > 0 && <a href="#entrevista">Entrevista</a>}
+      </nav>
+
       <div className="result-grid">
         <section className="review" aria-labelledby="review-title">
+          {knockouts.length > 0 && (
+            <>
+              <h2 id="requisitos">Requisitos eliminatórios</h2>
+              <Knockouts knockouts={knockouts} resume={session.input.resume} extra={session.input.extra} />
+            </>
+          )}
+
+          <h2 id="checagem">Olhar de recrutador</h2>
+          <RecruiterChecklist checks={data.checks} />
+
           <div className="section-head">
-            <h2 id="review-title">Mudanças sugeridas</h2>
+            <h2 id="mudancas">Mudanças sugeridas</h2>
             <button type="button" className="btn" onClick={acceptAllWithProof}>
               Aceitar todas com prova
             </button>
@@ -175,7 +241,7 @@ export default function ResultPage() {
             />
           ))}
 
-          <h2>Raio-X do ATS</h2>
+          <h2 id="ats">Raio-X do ATS</h2>
           <p className="muted">Como um filtro automático lê seu currículo para esta vaga. A conta é feita aqui, palavra por palavra.</p>
           <ul className="chips">
             {data.ats.keywords.map(({ keyword, status }) => (
@@ -225,27 +291,13 @@ export default function ResultPage() {
             </>
           )}
 
-          {result.recruiterMessage && (
-            <>
-              <div className="section-head">
-                <h2>Mensagem para o recrutador</h2>
-                <CopyButton text={result.recruiterMessage} />
-              </div>
-              <p className="message">{result.recruiterMessage}</p>
-            </>
-          )}
+          <h2 id="candidatura">Candidatura</h2>
+          <ApplicationPanel base={extraBase} recruiterMessage={result.recruiterMessage} demo={session.demo} />
 
           {result.interviewQuestions.length > 0 && (
             <>
-              <h2>Perguntas prováveis na entrevista</h2>
-              <dl className="questions">
-                {result.interviewQuestions.map((q) => (
-                  <div key={q.question}>
-                    <dt>{q.question}</dt>
-                    <dd>{q.tip}</dd>
-                  </div>
-                ))}
-              </dl>
+              <h2 id="entrevista">Treino de entrevista</h2>
+              <InterviewTrainer questions={result.interviewQuestions} base={extraBase} />
             </>
           )}
         </section>
@@ -287,6 +339,31 @@ export default function ResultPage() {
               </p>
             )}
             {downloadError && <p className="error" role="alert">{downloadError}</p>}
+            <div className="lang-bar">
+              <div className="lang-toggle" role="tablist" aria-label="Idioma do currículo">
+                <button type="button" role="tab" aria-selected={lang === "pt"} className={lang === "pt" ? "on" : ""} onClick={() => setLang("pt")}>
+                  Português
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={lang === "en"}
+                  className={lang === "en" ? "on" : ""}
+                  onClick={() => (englishFresh ? setLang("en") : translate())}
+                  disabled={translating}
+                >
+                  {translating ? "Traduzindo…" : "Inglês"}
+                </button>
+              </div>
+              {english && !englishFresh && !translating && (
+                <span className="note-warn small-note">
+                  Você mudou o currículo.{" "}
+                  <button type="button" className="link-button small" onClick={translate}>Traduzir de novo</button>
+                </span>
+              )}
+              {!english && !translating && <span className="muted small-note">Para vagas remotas e internacionais.</span>}
+            </div>
+            {translateError && <p className="error" role="alert">{translateError}</p>}
             {data.cliches.length > 0 && (
               <div className="cliche-box">
                 <strong>Clichês que ainda estão no currículo</strong>
@@ -300,18 +377,18 @@ export default function ResultPage() {
               </div>
             )}
             <article className={`paper${usesProfile ? " paper-styled" : ""}`} style={usesProfile ? { padding: `${profile.marginTop * 0.6}px ${profile.marginX * 0.6}px` } : undefined}>
-              <h3 style={usesProfile ? { ...css(profile.name, scale), ...center } : undefined}>{data.final.name}</h3>
-              {data.final.headline && (
+              <h3 style={usesProfile ? { ...css(profile.name, scale), ...center } : undefined}>{shown.name}</h3>
+              {shown.headline && (
                 <p className="paper-headline" style={usesProfile ? { ...css(profile.headline, scale), ...center } : undefined}>
-                  {data.final.headline}
+                  {shown.headline}
                 </p>
               )}
-              {data.final.contact.length > 0 && (
+              {shown.contact.length > 0 && (
                 <p className="paper-contact" style={usesProfile ? { ...css(profile.contact, scale), ...center } : undefined}>
-                  {data.final.contact.join(" | ")}
+                  {shown.contact.join(" | ")}
                 </p>
               )}
-              {data.final.sections.map((sec) => (
+              {shown.sections.map((sec) => (
                 <section key={sec.id}>
                   <h4 style={usesProfile ? css(profile.heading, scale) : undefined}>{sec.title}</h4>
                   {sec.lines.map((l, i) => {

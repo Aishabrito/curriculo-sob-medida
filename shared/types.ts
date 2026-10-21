@@ -11,6 +11,8 @@ export interface AnalyzeInput {
 export interface ResumeLine {
   id: string;
   text: string;
+  /** Linha de título de um item (cargo + empresa + período, curso + instituição, nome do projeto). */
+  strong?: boolean;
 }
 
 export interface ResumeSection {

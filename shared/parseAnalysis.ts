@@ -31,7 +31,7 @@ function parseSections(v: unknown): ResumeSection[] {
       title: str(s.title, 120),
       lines: arr(s.lines)
         .filter(isObj)
-        .map((l, j) => ({ id: str(l.id, 40) || `s${i + 1}l${j + 1}`, text: str(l.text) }))
+        .map((l, j) => ({ id: str(l.id, 40) || `s${i + 1}l${j + 1}`, text: str(l.text), strong: l.strong === true }))
         .filter((l) => l.text),
     }))
     .filter((s) => s.title || s.lines.length);

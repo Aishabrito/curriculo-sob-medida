@@ -26,6 +26,11 @@ const CLICHES: Cliche[] = [
   { label: "excelente comunicação", patterns: ["excelente comunicacao", "otima comunicacao", "boa comunicacao"], tip: "Cite onde você apresentou, ensinou ou documentou algo." },
   { label: "comprometido(a)", patterns: ["comprometido", "comprometida"], tip: "Troque por uma entrega que você cumpriu." },
   { label: "perfeccionista", patterns: ["perfeccionista"], tip: "Fale do seu cuidado com qualidade com um exemplo." },
+  { label: "garantindo / visando", patterns: ["garantindo", "visando"], tip: "Termine a frase no resultado: \"entreguei no prazo\" em vez de \"garantindo a entrega\"." },
+  { label: "robusto(a)", patterns: ["robusto", "robusta", "robustos", "robustas"], tip: "Diga o que o sistema aguenta: quantos usuários, quantos dados." },
+  { label: "crucial / fundamental", patterns: ["crucial", "fundamental"], tip: "Mostre o impacto em vez de dizer que foi importante." },
+  { label: "impulsionar", patterns: ["impulsionar", "impulsionando"], tip: "Use um verbo direto: aumentei, reduzi, criei." },
+  { label: "além disso", patterns: ["alem disso"], tip: "Comece uma linha nova com outro fato." },
 ];
 
 export interface ClicheHit {

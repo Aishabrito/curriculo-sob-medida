@@ -1,3 +1,4 @@
+import { humanize } from "./text";
 import type { AnalysisResult, EnglishResume, EnglishSource, ResumeSection, Suggestion } from "../../shared/types";
 
 export type Decision = "pendente" | "aceita" | "recusada";
@@ -14,11 +15,11 @@ export interface FinalResume {
   name: string;
   headline: string;
   contact: string[];
-  /** lineIds[i] é o id da linha original (null para linha nova). */
-  sections: { id: string; title: string; lines: string[]; lineIds: (string | null)[] }[];
+  /** lineIds[i] é o id da linha original (null para linha nova); strong[i] diz se é título de um item. */
+  sections: { id: string; title: string; lines: string[]; lineIds: (string | null)[]; strong: boolean[] }[];
 }
 
-const textOf = (s: Suggestion, st?: SuggestionState) => (st?.edited ?? s.suggested).trim();
+const textOf = (s: Suggestion, st?: SuggestionState) => humanize(st?.edited ?? s.suggested);
 
 export interface Edits {
   /** lineId → texto novo */
@@ -54,9 +55,10 @@ export function buildFinalResume(result: AnalysisResult, decisions: Decisions): 
   const known = new Set(result.sections.map((s) => s.id));
   const sections = result.sections.map((sec: ResumeSection) => ({
     id: sec.id,
-    title: sec.title,
-    lines: [...sec.lines.map((l) => replacements.get(l.id) ?? l.text), ...(additions.get(sec.id) ?? [])],
+    title: humanize(sec.title),
+    lines: [...sec.lines.map((l) => humanize(replacements.get(l.id) ?? l.text, l.strong)), ...(additions.get(sec.id) ?? [])],
     lineIds: [...sec.lines.map((l) => l.id), ...(additions.get(sec.id) ?? []).map(() => null)],
+    strong: [...sec.lines.map((l) => Boolean(l.strong)), ...(additions.get(sec.id) ?? []).map(() => false)],
   }));
 
   // Linhas novas para uma seção que não existia: o resumo profissional entra
@@ -65,11 +67,11 @@ export function buildFinalResume(result: AnalysisResult, decisions: Decisions): 
   const titleFor = titleForNewSection;
   const created = [...additions.entries()]
     .filter(([id]) => !known.has(id))
-    .map(([id, lines]) => ({ id, title: titleFor(id), lines, lineIds: lines.map(() => null) }));
+    .map(([id, lines]) => ({ id, title: titleFor(id), lines, lineIds: lines.map(() => null), strong: lines.map(() => false) }));
 
   return {
     name: result.candidate.name,
-    headline,
+    headline: humanize(headline),
     contact: result.candidate.contact,
     sections: [
       ...created.filter((c) => isSummary(c.id)),
@@ -94,6 +96,12 @@ export function applyEnglish(r: FinalResume, en: EnglishResume): FinalResume {
       return { ...s, title: t?.title || s.title, lines: s.lines.map((l, j) => t?.lines[j] || l) };
     }),
   };
+}
+
+/** Linhas do Word que mudam só por causa do travessão (original → sem travessão). */
+export function dashPairs(result: AnalysisResult): { from: string; to: string }[] {
+  const lines = [{ text: result.candidate.headline, strong: false }, ...result.sections.flatMap((s) => [{ text: s.title, strong: false }, ...s.lines])];
+  return lines.map((l) => ({ from: l.text, to: humanize(l.text, l.strong) })).filter((p) => p.from && p.from !== p.to);
 }
 
 /** Pares português → inglês para trocar no Word. */

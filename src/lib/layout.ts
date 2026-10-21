@@ -19,6 +19,8 @@ export interface StyledLine {
   italic: boolean;
   family: FontFamily;
   color: RGB;
+  /** Começo da linha em negrito quando o resto não é (ex.: "Tecnologias:"). */
+  boldPrefix?: string;
 }
 
 export interface PdfLayout {
@@ -58,6 +60,14 @@ export interface StyleProfile {
   bulletedLines: Record<string, boolean>;
   /** Para cada seção, se a maioria das linhas tinha marcador. */
   bulletedSections: Record<string, boolean>;
+  /** Linhas (lineId) que estavam inteiras em negrito no original. */
+  boldLines: Record<string, boolean>;
+  /** Linhas (lineId) que começavam com um rótulo em negrito ("Tecnologias:"). */
+  labelLines: Record<string, boolean>;
+  /** Para cada seção, se a maioria das linhas tinha rótulo em negrito. */
+  labelSections: Record<string, boolean>;
+  /** Sem o original para copiar: deixa em negrito todo rótulo "Algo:" no começo da linha. */
+  labelByDefault: boolean;
   /** Linhas do original com a largura medida, para ajustar o tamanho quando a fonte é trocada. */
   widthSamples: { text: string; width: number; style: TextStyle }[];
 }
@@ -87,6 +97,42 @@ export function scaleProfile(p: StyleProfile, k: number): StyleProfile {
   return { ...p, name: sc(p.name), headline: sc(p.headline), contact: sc(p.contact), heading: sc(p.heading), body: sc(p.body), lineHeight: p.lineHeight / Math.min(k, 1.15), widthSamples: [] };
 }
 
+/** Diminui letra, entrelinha e margens (k < 1) para o currículo caber em menos páginas. */
+export function fitProfile(p: StyleProfile, k: number): StyleProfile {
+  if (k >= 1) return p;
+  const sc = (st: TextStyle): TextStyle => ({ ...st, size: +(st.size * k).toFixed(2) });
+  const squeeze = 1 - (1 - k) * 1.6;
+  return {
+    ...p,
+    name: sc(p.name),
+    headline: sc(p.headline),
+    contact: sc(p.contact),
+    heading: sc(p.heading),
+    body: sc(p.body),
+    lineHeight: Math.max(1.05, p.lineHeight * (0.6 + 0.4 * k)),
+    marginX: Math.max(22, p.marginX * squeeze),
+    marginTop: Math.max(18, p.marginTop * squeeze),
+  };
+}
+
+export interface Segment {
+  text: string;
+  bold: boolean;
+}
+
+/**
+ * Quais pedaços da linha saem em negrito: a linha toda quando é título de
+ * um item (cargo, curso, projeto) ou já era negrito no original; só o
+ * rótulo ("Tecnologias:") quando o original fazia assim.
+ */
+export function lineSegments(p: StyleProfile, sectionId: string, lineId: string | null, strong: boolean, text: string): Segment[] {
+  if (strong || (lineId && p.boldLines[lineId])) return [{ text, bold: true }];
+  const label = lineId && lineId in p.labelLines ? p.labelLines[lineId] : (p.labelSections[sectionId] ?? p.labelByDefault);
+  const m = label ? text.match(/^([^:.]{2,40}:)\s*(.*)$/s) : null;
+  if (m) return [{ text: m[1], bold: true }, { text: m[2], bold: false }];
+  return [{ text, bold: false }];
+}
+
 const BLACK: RGB = [20, 20, 20];
 
 export const DEFAULT_PROFILE: StyleProfile = {
@@ -105,10 +151,16 @@ export const DEFAULT_PROFILE: StyleProfile = {
   bullet: null,
   bulletedLines: {},
   bulletedSections: {},
+  boldLines: {},
+  labelLines: {},
+  labelSections: {},
+  labelByDefault: true,
   widthSamples: [],
 };
 
 export const BULLET_RE = /^\s*([-–•*▪●◦○■□➢➤►✓✔·\uf000-\uf0ff])\s*/;
+
+const BOLD_FONT = /bold|black|heavy|semibold|demi|[-,]bd\b/i;
 
 const SERIF = /times|georgia|garamond|cambria|book|serif(?!-?sans)|minion|palatino|baskerville|merriweather|playfair|lora/i;
 const MONO = /courier|mono|consolas|menlo/i;
@@ -202,7 +254,7 @@ export async function readPdfLayout(doc: { numPages: number; getPage(n: number):
     }
 
     const items = (content.items as PdfTextItem[]).filter((it) => typeof it.str === "string");
-    const pageLines: (StyledLine & { pdfX: number; pdfY: number; chars: Map<string, number> })[] = [];
+    const pageLines: (StyledLine & { pdfX: number; pdfY: number; chars: Map<string, number>; runs: { text: string; bold: boolean }[] })[] = [];
     let current: (typeof pageLines)[number] | null = null;
 
     for (const it of items) {
@@ -224,6 +276,7 @@ export async function readPdfLayout(doc: { numPages: number; getPage(n: number):
           family: "helvetica",
           color: BLACK,
           chars: new Map(),
+          runs: [],
         };
         pageLines.push(current);
       }
@@ -232,8 +285,10 @@ export async function readPdfLayout(doc: { numPages: number; getPage(n: number):
       current.width = Math.max(current.width, ex + it.width - current.pdfX);
       if (it.str.trim()) {
         const fam = content.styles[it.fontName]?.fontFamily ?? "";
-        const key = `${realFontName(page, it.fontName, fam)}|${size.toFixed(1)}`;
+        const real = realFontName(page, it.fontName, fam);
+        const key = `${real}|${size.toFixed(1)}`;
         current.chars.set(key, (current.chars.get(key) ?? 0) + it.str.length);
+        current.runs.push({ text: it.str, bold: BOLD_FONT.test(real) });
       }
       if (it.hasEOL) current = null;
     }
@@ -242,7 +297,9 @@ export async function readPdfLayout(doc: { numPages: number; getPage(n: number):
       const [key] = [...line.chars.entries()].sort((x, y) => y[1] - x[1])[0] ?? ["|10"];
       const [font, size] = key.split("|");
       line.size = Number(size) || line.size;
-      line.bold = /bold|black|heavy|semibold|demi|[-,]bd\b/i.test(font);
+      line.bold = BOLD_FONT.test(font);
+      const firstPlain = line.runs.findIndex((r) => !r.bold);
+      if (!line.bold && firstPlain > 0) line.boldPrefix = line.runs.slice(0, firstPlain).map((r) => r.text).join("").trim();
       line.italic = /italic|oblique/i.test(font);
       line.family = familyFromFontName(font);
       line.text = line.text.replace(/\s+/g, " ").trim();
@@ -254,7 +311,7 @@ export async function readPdfLayout(doc: { numPages: number; getPage(n: number):
     } catch {
       /* sem canvas: fica preto */
     }
-    lines.push(...visible.map(({ text, page: p, x, y, width, size, bold, italic, family, color }) => ({ text, page: p, x, y, width, size, bold, italic, family, color })));
+    lines.push(...visible.map(({ text, page: p, x, y, width, size, bold, italic, family, color, boldPrefix }) => ({ text, page: p, x, y, width, size, bold, italic, family, color, boldPrefix })));
   }
 
   return { pageWidth, pageHeight, lines, pages: doc.numPages, hasImages };
@@ -313,14 +370,21 @@ export function buildStyleProfile(layout: PdfLayout, result: AnalysisResult): St
 
   const bulletedLines: Record<string, boolean> = {};
   const bulletedSections: Record<string, boolean> = {};
+  const boldLines: Record<string, boolean> = {};
+  const labelLines: Record<string, boolean> = {};
+  const labelSections: Record<string, boolean> = {};
   const bodyLines: StyledLine[] = [];
   let bullet: string | null = null;
   for (const sec of result.sections) {
     let withBullet = 0;
+    let withLabel = 0;
     for (const line of sec.lines) {
       const l = take(line.text);
       if (!l) continue;
       bodyLines.push(l);
+      boldLines[line.id] = l.bold;
+      labelLines[line.id] = Boolean(l.boldPrefix && /:$/.test(l.boldPrefix));
+      if (labelLines[line.id]) withLabel++;
       const m = l.text.match(BULLET_RE);
       bulletedLines[line.id] = Boolean(m);
       if (m) {
@@ -329,10 +393,13 @@ export function buildStyleProfile(layout: PdfLayout, result: AnalysisResult): St
       }
     }
     bulletedSections[sec.id] = withBullet > 0 && withBullet >= sec.lines.length / 2;
+    labelSections[sec.id] = withLabel > 0 && withLabel >= sec.lines.length / 2;
   }
 
-  const body = mostCommon(bodyLines) ?? mostCommon(lines.filter((l) => !used.has(l))) ?? DEFAULT_PROFILE.body;
-  const heading = mostCommon(headingLines) ?? { ...body, bold: true };
+  // O estilo do corpo vem das linhas comuns; títulos de item (negrito) não contam.
+  const body = mostCommon(bodyLines.filter((l) => !l.bold)) ?? mostCommon(bodyLines) ?? mostCommon(lines.filter((l) => !used.has(l))) ?? DEFAULT_PROFILE.body;
+  // Título de seção sempre em negrito, mesmo que no original não estivesse.
+  const heading = { ...(mostCommon(headingLines) ?? body), bold: true };
   const name = nameLine ? styleOf(nameLine) : { ...body, size: body.size * 1.8, bold: true };
   const headline = headlineLine ? styleOf(headlineLine) : body;
   const contact = contactLine ? styleOf(contactLine) : { ...body, size: body.size * 0.92 };
@@ -374,5 +441,9 @@ export function buildStyleProfile(layout: PdfLayout, result: AnalysisResult): St
     bullet: bullet && "•-–*·".includes(bullet) ? bullet : bullet ? "•" : null,
     bulletedLines,
     bulletedSections,
+    boldLines,
+    labelLines,
+    labelSections,
+    labelByDefault: false,
   };
 }

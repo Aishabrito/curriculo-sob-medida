@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link, Navigate } from "react-router-dom";
 import ApplicationPanel from "../components/ApplicationPanel";
 import InterviewTrainer from "../components/InterviewTrainer";
@@ -10,10 +10,10 @@ import { atsReport } from "../lib/ats";
 import { findCliches, humanScore } from "../lib/cliches";
 import { base64ToBytes, downloadBytes, patchDocx, replaceTextsInDocx, type DocxPatchReport } from "../lib/docx";
 import { checkEvidence } from "../lib/evidence";
-import { BULLET_RE, buildStyleProfile, DEFAULT_PROFILE, scaleProfile, sizeScale, type StyleProfile, type TextStyle } from "../lib/layout";
+import { BULLET_RE, buildStyleProfile, DEFAULT_PROFILE, lineSegments, scaleProfile, sizeScale, type StyleProfile, type TextStyle } from "../lib/layout";
 import { downloadResumePdf } from "../lib/pdf";
 import { recruiterChecks } from "../lib/recruiterChecks";
-import { applyEnglish, buildFinalResume, englishPairs, resumeToText, toEnglishSource, type Decisions, type FinalResume, type SuggestionState } from "../lib/resume";
+import { applyEnglish, buildFinalResume, dashPairs, englishPairs, resumeToText, toEnglishSource, type Decisions, type FinalResume, type SuggestionState } from "../lib/resume";
 import { loadSession, requestExtra, saveSession, type Session } from "../lib/session";
 
 const STATUS_LABEL = { tinha: "já tinha", adicionada: "adicionada", faltando: "faltando" } as const;
@@ -48,6 +48,7 @@ export default function ResultPage() {
   const [decisions, setDecisions] = useState<Decisions>(() => session?.decisions ?? {});
   const [docxReport, setDocxReport] = useState<DocxPatchReport | null>(null);
   const [downloadError, setDownloadError] = useState("");
+  const [pdfNote, setPdfNote] = useState("");
   const [lang, setLang] = useState<"pt" | "en">("pt");
   const [english, setEnglish] = useState<{ resume: FinalResume; madeFor: string } | null>(null);
   const [translating, setTranslating] = useState(false);
@@ -140,13 +141,23 @@ export default function ResultPage() {
     }
   };
 
-  const downloadPdf = (p: StyleProfile = profile) => downloadResumePdf(shown, `${fileBase}.pdf`, p);
+  const originalPages = source?.kind === "pdf" ? source.layout.pages : undefined;
+  const downloadPdf = async (p: StyleProfile = profile) => {
+    setPdfNote("");
+    const pages = await downloadResumePdf(shown, `${fileBase}.pdf`, p, originalPages);
+    if (originalPages && pages > originalPages) {
+      setPdfNote(
+        `Seu currículo tinha ${originalPages} página(s) e o novo ficou com ${pages}, mesmo com a letra menor. Recuse alguma linha nova ou encurte uma descrição para voltar a ${originalPages}.`,
+      );
+    }
+  };
   const downloadDocx = async () => {
     if (source?.kind !== "docx") return;
     setDownloadError("");
     try {
       const patched = await patchDocx(base64ToBytes(source.base64), result, decisions);
-      let bytes = patched.data;
+      // Tira os travessões que ficaram nas linhas que não mudaram.
+      let bytes = (await replaceTextsInDocx(patched.data, dashPairs(result))).data;
       const report = { ...patched.report };
       if (showEnglish) {
         const tr = await replaceTextsInDocx(bytes, englishPairs(data.final, englishFresh));
@@ -339,6 +350,7 @@ export default function ResultPage() {
               </p>
             )}
             {downloadError && <p className="error" role="alert">{downloadError}</p>}
+            {pdfNote && <p className="error" role="status">{pdfNote}</p>}
             <div className="lang-bar">
               <div className="lang-toggle" role="tablist" aria-label="Idioma do currículo">
                 <button type="button" role="tab" aria-selected={lang === "pt"} className={lang === "pt" ? "on" : ""} onClick={() => setLang("pt")}>
@@ -394,10 +406,16 @@ export default function ResultPage() {
                   {sec.lines.map((l, i) => {
                     const id = sec.lineIds[i];
                     const bulleted = usesProfile && profile.bullet && (id ? profile.bulletedLines[id] : profile.bulletedSections[sec.id]);
+                    const segments = lineSegments(profile, sec.id, id, sec.strong?.[i] ?? false, usesProfile ? l.replace(BULLET_RE, "") : l);
                     return (
                       <p key={i} className={bulleted ? "paper-bullet" : undefined} style={usesProfile ? css(profile.body, scale) : undefined}>
                         {bulleted && <span aria-hidden>{profile.bullet === "·" ? "•" : profile.bullet} </span>}
-                        {usesProfile ? l.replace(BULLET_RE, "") : l}
+                        {segments.map((s, k) => (
+                          <Fragment key={k}>
+                            {k > 0 && " "}
+                            {s.bold ? <strong>{s.text}</strong> : s.text}
+                          </Fragment>
+                        ))}
                       </p>
                     );
                   })}

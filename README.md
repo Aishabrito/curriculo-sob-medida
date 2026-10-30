@@ -67,7 +67,9 @@ Sem chave, o site funciona normalmente com o exemplo pronto.
 
 ## Publicar de graça na Vercel
 
-1. Entre em [vercel.com](https://vercel.com) com o GitHub e importe este repositório (o Vite é detectado sozinho).
+[![Publicar na Vercel](https://vercel.com/button)](https://vercel.com/new/import?s=https%3A%2F%2Fgithub.com%2FAishabrito%2Fcurriculo-sob-medida&project-name=curriculo-sob-medida&env=GEMINI_API_KEY&envDescription=Chave%20gr%C3%A1tis%20do%20Google%20AI%20Studio&envLink=https%3A%2F%2Faistudio.google.com%2Fapikey)
+
+1. Entre em [vercel.com](https://vercel.com) com o GitHub e importe este repositório (ou clique no botão acima). O Vite é detectado sozinho.
 2. Em **Settings → Environment Variables**, adicione `GEMINI_API_KEY` (e, se quiser, `GROQ_API_KEY`, de [console.groq.com/keys](https://console.groq.com/keys)).
 3. Faça o deploy. Pronto.
 
